@@ -67,8 +67,9 @@ The root-level `inference.py` script uses an OpenAI-compatible client and output
 | Model | Expected Task 1 (Easy) | Expected Task 2 (Medium) | Expected Task 3 (Hard) | Estimated Success Benchmark |
 | :--- | :--- | :--- | :--- | :--- |
 | **meta-llama/Meta-Llama-3.1-8B-Instruct-fast** | ~0.20 - 0.35 | ~0.05 | ~0.0 | **Low** |
-| **meta-llama/Llama-3.3-70B-Instruct-fast** | ~0.80 | ~0.45 | ~0.20 | **Medium-High** |
-| **GPT-4** / **Claude 3.5 Sonnet** (Est.) | ~1.0 | ~0.80 | ~0.60 | **High** |
+| **meta-llama/Llama-3.3-70B-Instruct-fast** | ~0.80 | ~0.45 | ~0.20 | **Medium** |
+| **DeepSeek/DeepSeek-V3-0324** | ~0.90 | ~0.60 | ~0.35 | **High** |
+| **Qwen/Qwen3.5-397B-A17B** | ~1.0 | ~0.80 | ~0.60 | **Frontier** |
 
 Default provider settings:
 
