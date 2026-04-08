@@ -4,6 +4,15 @@ from __future__ import annotations
 
 from incident_response_env.models import IncidentState
 
+MIN_SCORE = 0.0001
+MAX_SCORE = 0.9999
+
+
+def _bounded_score(score: float) -> float:
+    """Keep task scores strictly inside the open interval (0, 1)."""
+
+    return min(max(score, MIN_SCORE), MAX_SCORE)
+
 
 def grade_task1(state: IncidentState) -> float:
     score = 0.0
@@ -17,7 +26,7 @@ def grade_task1(state: IncidentState) -> float:
         score += 0.30
     if state.step_count > 0 and state.step_count <= 6 and state.selected_runbook == "RB-017":
         score += 0.10
-    return min(score, 1.0)
+    return _bounded_score(score)
 
 
 def grade_task2(state: IncidentState) -> float:
@@ -35,7 +44,7 @@ def grade_task2(state: IncidentState) -> float:
         score += 0.15
     if state.step_count > 0 and state.step_count <= 12 and "kill-query-RB-042" in state.steps_executed:
         score += 0.05
-    return min(score, 1.0)
+    return _bounded_score(score)
 
 
 def grade_task3(state: IncidentState) -> float:
@@ -67,4 +76,4 @@ def grade_task3(state: IncidentState) -> float:
     for section in ("timeline", "impact", "root cause", "action items"):
         if section in postmortem:
             score += 0.05
-    return min(score, 1.0)
+    return _bounded_score(score)

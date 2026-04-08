@@ -59,7 +59,7 @@ class IncidentResponseEnvironment(
         self._last_log_snippet = "No logs fetched yet."
         self._last_metrics = clone_metrics(self._scenario["initial_metrics"])
         self._last_feedback = self._scenario["initial_feedback"]
-        return self._make_observation(reward=0.0, done=False)
+        return self._make_observation(reward=self._grade_current_task(), done=False)
 
     def step(
         self,
@@ -74,7 +74,7 @@ class IncidentResponseEnvironment(
         handler = getattr(self, f"_handle_{action.action_type}", None)
         if handler is None:
             self._last_feedback = f"Unsupported action: {action.action_type}"
-            return self._make_observation(reward=-0.10, done=False)
+            return self._make_observation(reward=self._grade_current_task(), done=False)
 
         is_redundant = self._is_redundant(action)
         if is_redundant:
@@ -87,14 +87,6 @@ class IncidentResponseEnvironment(
             is_relevant_service = result.get("is_relevant_service", False)
             is_correct_next_step = result.get("is_correct_next_step", False)
 
-        reward = compute_step_reward(
-            action,
-            prev_state,
-            self._state,
-            is_relevant_service=is_relevant_service,
-            is_correct_next_step=is_correct_next_step,
-            is_redundant=is_redundant,
-        )
         done = self._state.resolved and (
             self._state.task_id != "postmortem-p1-hard" or self._state.postmortem_written
         )
@@ -105,6 +97,10 @@ class IncidentResponseEnvironment(
                 f"{self._last_feedback} Step budget exhausted before full resolution."
             ).strip()
 
+        # Always use the bounded grader score as the reward.
+        # The evaluator interprets observation.reward as the task score,
+        # which must be strictly between 0 and 1.
+        reward = self._grade_current_task()
         return self._make_observation(reward=reward, done=done)
 
     @property
