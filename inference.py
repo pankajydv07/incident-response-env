@@ -21,8 +21,8 @@ if os.path.isfile(_env_path):
                 _k, _, _v = _line.partition("=")
                 os.environ.setdefault(_k.strip(), _v.strip())
 
-API_BASE_URL = os.environ.get("API_BASE_URL", "https://api.tokenfactory.nebius.com/v1/")
-MODEL_NAME = os.environ.get("MODEL_NAME", "meta-llama/Meta-Llama-3.1-8B-Instruct-fast")
+API_BASE_URL = os.environ.get("API_BASE_URL", "https://api.tokenfactory.us-central1.nebius.com/v1/")
+MODEL_NAME = os.environ.get("MODEL_NAME", "deepseek-ai/DeepSeek-R1-0528-fast")
 API_KEY = (
     os.environ.get("NEBIUS_API_KEY")
     or os.environ.get("OPENAI_API_KEY")
@@ -102,7 +102,15 @@ def get_model_action(client: OpenAI, step: int, result, last_reward: float, hist
             model=MODEL_NAME,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
+                {
+                    "role": "user", 
+                    "content": [
+                        {
+                            "type": "text", 
+                            "text": user_prompt
+                        }
+                    ]
+                },
             ],
             temperature=TEMPERATURE,
             max_tokens=MAX_TOKENS,
@@ -115,28 +123,41 @@ def get_model_action(client: OpenAI, step: int, result, last_reward: float, hist
 
 async def run_task(task_id: str, max_steps: int, max_total_reward: float, threshold: float) -> float:
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
-    env = await IncidentResponseEnv.from_docker_image(IMAGE_NAME)
     history: List[str] = []
     rewards: List[float] = []
     steps_taken = 0
     score = 0.0
     success = False
     log_start(task=task_id, env="incident-response-env", model=MODEL_NAME)
+    env = None
     try:
+        env = await IncidentResponseEnv.from_docker_image(IMAGE_NAME)
         result = await env.reset(task_id=task_id)
         last_reward = 0.0
         for step in range(1, max_steps + 1):
             if result.done:
                 break
             raw_action = get_model_action(client, step, result, last_reward, history)
+            if "</think>" in raw_action:
+                clean_json = raw_action.split("</think>")[-1].strip()
+                if clean_json.startswith("```json"):
+                    clean_json = clean_json.split("```json")[-1].split("```")[0].strip()
+            else:
+                clean_json = raw_action.strip()
+
             try:
-                action_dict = json.loads(raw_action)
+                action_dict = json.loads(clean_json)
             except Exception:
                 action_dict = {
                     "action_type": "check_logs",
                     "parameters": {"service": "api-gateway"},
                 }
-            action = IncidentAction(**action_dict)
+            try:
+                action = IncidentAction(**action_dict)
+            except Exception as exc:
+                print(f"[DEBUG] Validation failed: {exc}", flush=True)
+                action = IncidentAction(action_type="check_logs", parameters={"service": "api-gateway"})
+            
             result = await env.step(action)
             reward = float(result.reward or 0.0)
             rewards.append(reward)
@@ -147,17 +168,27 @@ async def run_task(task_id: str, max_steps: int, max_total_reward: float, thresh
             if result.done:
                 break
         score = sum(rewards) / max_total_reward if max_total_reward > 0 else 0.0
-        score = min(max(score, 0.0), 1.0)
+        score = min(max(score, 0.0001), 0.9999)
         success = score >= threshold
+    except Exception as exc:
+        print(f"[ERROR] Task {task_id} failed with unhandled exception: {exc}", flush=True)
+        log_step(step=steps_taken + 1, action="error", reward=0.0, done=True, error=str(exc))
     finally:
-        await env.close()
+        if env:
+            try:
+                await env.close()
+            except Exception as exc_close:
+                print(f"[ERROR] Failed to close env: {exc_close}", flush=True)
         log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
     return score
 
 
 async def main() -> None:
     for task_id, max_steps, max_reward, threshold in TASKS:
-        await run_task(task_id, max_steps, max_reward, threshold)
+        try:
+            await run_task(task_id, max_steps, max_reward, threshold)
+        except Exception as exc:
+            print(f"[CRITICAL] Unhandled exception in main for {task_id}: {exc}", flush=True)
 
 
 if __name__ == "__main__":
