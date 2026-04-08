@@ -1,0 +1,29 @@
+spec_version: 1
+name: incident-response-env
+type: space
+runtime: fastapi
+app: incident_response_env.server.app:app
+port: 8000
+version: "1.0.0"
+description: >
+  An SRE incident response environment where agents triage alerts, inspect logs
+  and metrics, execute deterministic runbook steps, and write postmortems.
+author: pankaj-yadav
+tags:
+  - openenv
+  - devops
+  - incident-response
+  - sre
+tasks:
+  - id: alert-triage-easy
+    difficulty: easy
+    max_steps: 8
+    max_total_reward: 4.0
+  - id: multi-service-incident-medium
+    difficulty: medium
+    max_steps: 15
+    max_total_reward: 8.0
+  - id: postmortem-p1-hard
+    difficulty: hard
+    max_steps: 25
+    max_total_reward: 12.0
