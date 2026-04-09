@@ -59,10 +59,8 @@ class IncidentResponseEnvironment(
         self._last_log_snippet = "No logs fetched yet."
         self._last_metrics = clone_metrics(self._scenario["initial_metrics"])
         self._last_feedback = self._scenario["initial_feedback"]
-        self._prev_score = 0.0
-        initial_score = self._grade_current_task()
-        self._prev_score = initial_score
-        return self._make_observation(reward=initial_score, done=False)
+        # Reward = current grader score (always in 0.0001–0.9999)
+        return self._make_observation(reward=self._grade_current_task(), done=False)
 
     def step(
         self,
@@ -71,7 +69,6 @@ class IncidentResponseEnvironment(
         **kwargs: Any,
     ) -> IncidentObservation:
         del timeout_s, kwargs
-        prev_state = self._state.model_copy(deep=True)
         self._state.step_count += 1
 
         handler = getattr(self, f"_handle_{action.action_type}", None)
@@ -100,12 +97,10 @@ class IncidentResponseEnvironment(
                 f"{self._last_feedback} Step budget exhausted before full resolution."
             ).strip()
 
-        # Compute reward as the delta (increment) of the grader score.
-        # This ensures sum(step_rewards) = final_grader_score ∈ (0, 1).
-        current_score = self._grade_current_task()
-        reward = max(current_score - self._prev_score, 0.0)
-        self._prev_score = current_score
-        return self._make_observation(reward=reward, done=done)
+        # Reward = current grader score (always in 0.0001–0.9999).
+        # The grader score is cumulative and monotonically represents
+        # progress. It is always bounded by _bounded_score().
+        return self._make_observation(reward=self._grade_current_task(), done=done)
 
     @property
     def state(self) -> IncidentState:

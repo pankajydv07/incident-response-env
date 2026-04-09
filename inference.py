@@ -59,6 +59,17 @@ if not API_KEY:
     )
 
 
+# ---------------------------------------------------------------------------
+# Helpers to clamp any score/reward to the strictly open interval (0, 1)
+# ---------------------------------------------------------------------------
+MIN_SCORE = 0.0001
+MAX_SCORE = 0.9999
+
+
+def _clamp(value: float) -> float:
+    """Clamp a value to the strict open interval (0, 1)."""
+    return min(max(value, MIN_SCORE), MAX_SCORE)
+
 
 def log_start(task: str, env: str, model: str) -> None:
     print(f'[START] {{"task": "{task}", "env": "{env}", "model": "{model}"}}', flush=True)
@@ -66,8 +77,10 @@ def log_start(task: str, env: str, model: str) -> None:
 
 
 def log_step(step: int, action: str, reward: float, done: bool, error: str | None) -> None:
+    # Clamp reward to (0, 1) before logging
+    clamped_reward = _clamp(reward)
     print(
-        f'[STEP] {{"step": {step}, "action": {action!r}, "reward": {reward}, '
+        f'[STEP] {{"step": {step}, "action": {action!r}, "reward": {clamped_reward}, '
         f'"done": {str(done).lower()}, "error": {error!r}}}',
         flush=True,
     )
@@ -75,9 +88,12 @@ def log_step(step: int, action: str, reward: float, done: bool, error: str | Non
 
 
 def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
+    # Clamp the final score to (0, 1) before logging
+    clamped_score = _clamp(score)
+    clamped_rewards = [_clamp(r) for r in rewards]
     print(
         f'[END] {{"success": {str(success).lower()}, "steps": {steps}, '
-        f'"score": {score:.4f}, "rewards": {rewards}}}',
+        f'"score": {clamped_score:.4f}, "rewards": {clamped_rewards}}}',
         flush=True,
     )
 
@@ -126,14 +142,15 @@ async def run_task(task_id: str, max_steps: int, max_total_reward: float, thresh
     history: List[str] = []
     rewards: List[float] = []
     steps_taken = 0
-    score = 0.0
+    # CRITICAL: Initialize score to a valid value inside (0, 1), never 0.0
+    score = MIN_SCORE
     success = False
     log_start(task=task_id, env="incident-response-env", model=MODEL_NAME)
     env = None
     try:
         env = await IncidentResponseEnv.from_docker_image(IMAGE_NAME)
         result = await env.reset(task_id=task_id)
-        last_reward = 0.0
+        last_reward = float(result.reward or MIN_SCORE)
         for step in range(1, max_steps + 1):
             if result.done:
                 break
@@ -159,22 +176,27 @@ async def run_task(task_id: str, max_steps: int, max_total_reward: float, thresh
                 action = IncidentAction(action_type="check_logs", parameters={"service": "api-gateway"})
             
             result = await env.step(action)
-            reward = float(result.reward or 0.0)
+            # The environment returns the cumulative grader score as reward.
+            # It is always in (0.0001, 0.9999) thanks to _bounded_score().
+            reward = _clamp(float(result.reward or MIN_SCORE))
             rewards.append(reward)
             steps_taken = step
             last_reward = reward
             log_step(step=step, action=raw_action, reward=reward, done=result.done, error=None)
-            history.append(f"Step {step}: {raw_action!r} -> reward {reward:+.2f}")
+            history.append(f"Step {step}: {raw_action!r} -> reward {reward:+.4f}")
             if result.done:
                 break
-        # sum(delta_rewards) = final_grader_score ∈ (0.0001, 0.9999)
-        # max_total_reward = 1.0, so score = sum / 1.0 = grader score
-        score = sum(rewards) / max_total_reward if max_total_reward > 0 else 0.0
-        score = min(max(score, 0.0001), 0.9999)
+        # The reward from the environment is the cumulative grader score (0.0001–0.9999).
+        # Use the LAST reward as the task score since it represents total progress.
+        score = rewards[-1] if rewards else MIN_SCORE
+        score = _clamp(score)
         success = score >= threshold
     except Exception as exc:
         print(f"[ERROR] Task {task_id} failed with unhandled exception: {exc}", flush=True)
-        log_step(step=steps_taken + 1, action="error", reward=0.0, done=True, error=str(exc))
+        # Even on error, emit a valid score inside (0, 1)
+        log_step(step=steps_taken + 1, action="error", reward=MIN_SCORE, done=True, error=str(exc))
+        # Use last known reward if we have any, otherwise MIN_SCORE
+        score = _clamp(rewards[-1] if rewards else MIN_SCORE)
     finally:
         if env:
             try:
@@ -191,6 +213,8 @@ async def main() -> None:
             await run_task(task_id, max_steps, max_reward, threshold)
         except Exception as exc:
             print(f"[CRITICAL] Unhandled exception in main for {task_id}: {exc}", flush=True)
+            # Even if run_task itself crashes, emit a valid [END] with valid score
+            log_end(success=False, steps=0, score=MIN_SCORE, rewards=[MIN_SCORE])
 
 
 if __name__ == "__main__":
