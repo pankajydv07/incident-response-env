@@ -18,12 +18,12 @@ tasks:
   - id: alert-triage-easy
     difficulty: easy
     max_steps: 8
-    max_total_reward: 4.0
+    max_total_reward: 1.0
   - id: multi-service-incident-medium
     difficulty: medium
     max_steps: 15
-    max_total_reward: 8.0
+    max_total_reward: 1.0
   - id: postmortem-p1-hard
     difficulty: hard
     max_steps: 25
-    max_total_reward: 12.0
+    max_total_reward: 1.0

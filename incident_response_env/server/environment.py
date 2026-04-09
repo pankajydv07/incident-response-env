@@ -59,7 +59,10 @@ class IncidentResponseEnvironment(
         self._last_log_snippet = "No logs fetched yet."
         self._last_metrics = clone_metrics(self._scenario["initial_metrics"])
         self._last_feedback = self._scenario["initial_feedback"]
-        return self._make_observation(reward=self._grade_current_task(), done=False)
+        self._prev_score = 0.0
+        initial_score = self._grade_current_task()
+        self._prev_score = initial_score
+        return self._make_observation(reward=initial_score, done=False)
 
     def step(
         self,
@@ -97,10 +100,11 @@ class IncidentResponseEnvironment(
                 f"{self._last_feedback} Step budget exhausted before full resolution."
             ).strip()
 
-        # Always use the bounded grader score as the reward.
-        # The evaluator interprets observation.reward as the task score,
-        # which must be strictly between 0 and 1.
-        reward = self._grade_current_task()
+        # Compute reward as the delta (increment) of the grader score.
+        # This ensures sum(step_rewards) = final_grader_score ∈ (0, 1).
+        current_score = self._grade_current_task()
+        reward = max(current_score - self._prev_score, 0.0)
+        self._prev_score = current_score
         return self._make_observation(reward=reward, done=done)
 
     @property

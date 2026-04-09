@@ -33,9 +33,9 @@ TEMPERATURE = float(os.environ.get("TEMPERATURE", "0.0"))
 MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "512"))
 
 TASKS = [
-    ("alert-triage-easy", 8, 4.0, 0.60),
-    ("multi-service-incident-medium", 15, 8.0, 0.55),
-    ("postmortem-p1-hard", 25, 12.0, 0.45),
+    ("alert-triage-easy", 8, 1.0, 0.60),
+    ("multi-service-incident-medium", 15, 1.0, 0.55),
+    ("postmortem-p1-hard", 25, 1.0, 0.45),
 ]
 
 SYSTEM_PROMPT = """You are an expert Site Reliability Engineer responding to a \
@@ -167,9 +167,9 @@ async def run_task(task_id: str, max_steps: int, max_total_reward: float, thresh
             history.append(f"Step {step}: {raw_action!r} -> reward {reward:+.2f}")
             if result.done:
                 break
-        # The reward from the env is the bounded grader score (0.0001–0.9999).
-        # Use the last reward as the final task score.
-        score = rewards[-1] if rewards else 0.0001
+        # sum(delta_rewards) = final_grader_score ∈ (0.0001, 0.9999)
+        # max_total_reward = 1.0, so score = sum / 1.0 = grader score
+        score = sum(rewards) / max_total_reward if max_total_reward > 0 else 0.0
         score = min(max(score, 0.0001), 0.9999)
         success = score >= threshold
     except Exception as exc:
